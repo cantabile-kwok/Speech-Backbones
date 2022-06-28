@@ -19,7 +19,6 @@ from data import TextMelSpeakerDataset, TextMelSpeakerBatchCollate
 from utils import plot_tensor, save_plot
 from text.symbols import symbols
 
-
 train_filelist_path = params.train_filelist_path
 valid_filelist_path = params.valid_filelist_path
 cmudict_path = params.cmudict_path
@@ -57,8 +56,8 @@ beta_min = params.beta_min
 beta_max = params.beta_max
 pe_scale = params.pe_scale
 
-
 if __name__ == "__main__":
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(random_seed)
     np.random.seed(random_seed)
 
@@ -79,11 +78,11 @@ if __name__ == "__main__":
 
     print('Initializing model...')
     model = GradTTS(nsymbols, n_spks, spk_emb_dim, n_enc_channels,
-                    filter_channels, filter_channels_dp, 
-                    n_heads, n_enc_layers, enc_kernel, enc_dropout, window_size, 
-                    n_feats, dec_dim, beta_min, beta_max, pe_scale).cuda()
-    print('Number of encoder parameters = %.2fm' % (model.encoder.nparams/1e6))
-    print('Number of decoder parameters = %.2fm' % (model.decoder.nparams/1e6))
+                    filter_channels, filter_channels_dp,
+                    n_heads, n_enc_layers, enc_kernel, enc_dropout, window_size,
+                    n_feats, dec_dim, beta_min, beta_max, pe_scale).to(device)
+    print('Number of encoder parameters = %.2fm' % (model.encoder.nparams / 1e6))
+    print('Number of decoder parameters = %.2fm' % (model.decoder.nparams / 1e6))
 
     print('Initializing optimizer...')
     optimizer = torch.optim.Adam(params=model.parameters(), lr=learning_rate)
@@ -104,11 +103,11 @@ if __name__ == "__main__":
         print('Synthesis...')
         with torch.no_grad():
             for item in test_batch:
-                x = item['x'].to(torch.long).unsqueeze(0).cuda()
-                x_lengths = torch.LongTensor([x.shape[-1]]).cuda()
-                spk = item['spk'].to(torch.long).cuda()
+                x = item['x'].to(torch.long).unsqueeze(0).to(device)
+                x_lengths = torch.LongTensor([x.shape[-1]]).to(device)
+                spk = item['spk'].to(torch.long).to(device)
                 i = int(spk.cpu())
-                
+
                 y_enc, y_dec, attn = model(x, x_lengths, n_timesteps=50, spk=spk)
                 logger.add_image(f'image_{i}/generated_enc',
                                  plot_tensor(y_enc.squeeze().cpu()),
@@ -119,49 +118,49 @@ if __name__ == "__main__":
                 logger.add_image(f'image_{i}/alignment',
                                  plot_tensor(attn.squeeze().cpu()),
                                  global_step=iteration, dataformats='HWC')
-                save_plot(y_enc.squeeze().cpu(), 
+                save_plot(y_enc.squeeze().cpu(),
                           f'{log_dir}/generated_enc_{i}.png')
-                save_plot(y_dec.squeeze().cpu(), 
+                save_plot(y_dec.squeeze().cpu(),
                           f'{log_dir}/generated_dec_{i}.png')
-                save_plot(attn.squeeze().cpu(), 
+                save_plot(attn.squeeze().cpu(),
                           f'{log_dir}/alignment_{i}.png')
-        
+
         model.train()
         dur_losses = []
         prior_losses = []
         diff_losses = []
-        with tqdm(loader, total=len(train_dataset)//batch_size) as progress_bar:
+        with tqdm(loader, total=len(train_dataset) // batch_size) as progress_bar:
             for batch in progress_bar:
                 model.zero_grad()
-                x, x_lengths = batch['x'].cuda(), batch['x_lengths'].cuda()
-                y, y_lengths = batch['y'].cuda(), batch['y_lengths'].cuda()
-                spk = batch['spk'].cuda()
+                x, x_lengths = batch['x'].to(device), batch['x_lengths'].to(device)
+                y, y_lengths = batch['y'].to(device), batch['y_lengths'].to(device)
+                spk = batch['spk'].to(device)
                 dur_loss, prior_loss, diff_loss = model.compute_loss(x, x_lengths,
                                                                      y, y_lengths,
                                                                      spk=spk, out_size=out_size)
                 loss = sum([dur_loss, prior_loss, diff_loss])
                 loss.backward()
 
-                enc_grad_norm = torch.nn.utils.clip_grad_norm_(model.encoder.parameters(), 
-                                                            max_norm=1)
-                dec_grad_norm = torch.nn.utils.clip_grad_norm_(model.decoder.parameters(), 
-                                                            max_norm=1)
+                enc_grad_norm = torch.nn.utils.clip_grad_norm_(model.encoder.parameters(),
+                                                               max_norm=1)
+                dec_grad_norm = torch.nn.utils.clip_grad_norm_(model.decoder.parameters(),
+                                                               max_norm=1)
                 optimizer.step()
 
                 logger.add_scalar('training/duration_loss', dur_loss,
-                                global_step=iteration)
+                                  global_step=iteration)
                 logger.add_scalar('training/prior_loss', prior_loss,
-                                global_step=iteration)
+                                  global_step=iteration)
                 logger.add_scalar('training/diffusion_loss', diff_loss,
-                                global_step=iteration)
+                                  global_step=iteration)
                 logger.add_scalar('training/encoder_grad_norm', enc_grad_norm,
-                                global_step=iteration)
+                                  global_step=iteration)
                 logger.add_scalar('training/decoder_grad_norm', dec_grad_norm,
-                                global_step=iteration)
-                
+                                  global_step=iteration)
+
                 msg = f'Epoch: {epoch}, iteration: {iteration} | dur_loss: {dur_loss.item()}, prior_loss: {prior_loss.item()}, diff_loss: {diff_loss.item()}'
                 progress_bar.set_description(msg)
-                
+
                 dur_losses.append(dur_loss.item())
                 prior_losses.append(prior_loss.item())
                 diff_losses.append(diff_loss.item())
@@ -175,6 +174,6 @@ if __name__ == "__main__":
 
         if epoch % params.save_every > 0:
             continue
-        
+
         ckpt = model.state_dict()
         torch.save(ckpt, f=f"{log_dir}/grad_{epoch}.pt")
