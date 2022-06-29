@@ -126,24 +126,23 @@ class SinusoidalPosEmb(BaseModule):
 
 
 class GradLogPEstimator2d(BaseModule):
-    def __init__(self, dim, dim_mults=(1, 2, 4), groups=8,
-                 n_spks=None, spk_emb_dim=64, n_feats=80, pe_scale=1000):
+    def __init__(self, dim, dim_mults=(1, 2, 4), groups=8, spk_emb_dim=64, n_feats=80, pe_scale=1000):
         super(GradLogPEstimator2d, self).__init__()
         self.dim = dim
         self.dim_mults = dim_mults
         self.groups = groups
-        self.n_spks = n_spks if not isinstance(n_spks, type(None)) else 1
+        # self.n_spks = n_spks if not isinstance(n_spks, type(None)) else 1
         self.spk_emb_dim = spk_emb_dim
         self.pe_scale = pe_scale
         
-        if n_spks > 1:
-            self.spk_mlp = torch.nn.Sequential(torch.nn.Linear(spk_emb_dim, spk_emb_dim * 4), Mish(),
-                                               torch.nn.Linear(spk_emb_dim * 4, n_feats))
+        # if n_spks > 1:
+        self.spk_mlp = torch.nn.Sequential(torch.nn.Linear(spk_emb_dim, spk_emb_dim * 4), Mish(),
+                                           torch.nn.Linear(spk_emb_dim * 4, n_feats))
         self.time_pos_emb = SinusoidalPosEmb(dim)
         self.mlp = torch.nn.Sequential(torch.nn.Linear(dim, dim * 4), Mish(),
                                        torch.nn.Linear(dim * 4, dim))
 
-        dims = [2 + (1 if n_spks > 1 else 0), *map(lambda m: dim * m, dim_mults)]
+        dims = [3, *map(lambda m: dim * m, dim_mults)]
         in_out = list(zip(dims[:-1], dims[1:]))
         self.downs = torch.nn.ModuleList([])
         self.ups = torch.nn.ModuleList([])
@@ -178,11 +177,11 @@ class GradLogPEstimator2d(BaseModule):
         t = self.time_pos_emb(t, scale=self.pe_scale)
         t = self.mlp(t)
 
-        if self.n_spks < 2:
-            x = torch.stack([mu, x], 1)
-        else:
-            s = s.unsqueeze(-1).repeat(1, 1, x.shape[-1])
-            x = torch.stack([mu, x, s], 1)
+        # if self.n_spks < 2:
+        #     x = torch.stack([mu, x], 1)
+        # else:
+        s = s.unsqueeze(-1).repeat(1, 1, x.shape[-1])
+        x = torch.stack([mu, x, s], 1)
         mask = mask.unsqueeze(1)
 
         hiddens = []
@@ -225,19 +224,18 @@ def get_noise(t, beta_init, beta_term, cumulative=False):
 
 
 class Diffusion(BaseModule):
-    def __init__(self, n_feats, dim,
-                 n_spks=1, spk_emb_dim=64,
+    def __init__(self, n_feats, dim, spk_emb_dim=64,
                  beta_min=0.05, beta_max=20, pe_scale=1000):
         super(Diffusion, self).__init__()
         self.n_feats = n_feats
         self.dim = dim
-        self.n_spks = n_spks
+        # self.n_spks = n_spks
         self.spk_emb_dim = spk_emb_dim
         self.beta_min = beta_min
         self.beta_max = beta_max
         self.pe_scale = pe_scale
         
-        self.estimator = GradLogPEstimator2d(dim, n_spks=n_spks,
+        self.estimator = GradLogPEstimator2d(dim,
                                              spk_emb_dim=spk_emb_dim,
                                              pe_scale=pe_scale)
 
