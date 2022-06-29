@@ -166,7 +166,7 @@ if __name__ == "__main__":
                 diff_losses.append(diff_loss.item())
                 iteration += 1
 
-        msg = 'Epoch %d: duration loss = %.3f ' % (epoch, np.mean(dur_losses))
+        msg = 'Epoch %d: duration loss = %.3f ' % (epoch, float(np.mean(dur_losses)))
         msg += '| prior loss = %.3f ' % np.mean(prior_losses)
         msg += '| diffusion loss = %.3f\n' % np.mean(diff_losses)
         with open(f'{log_dir}/train.log', 'a') as f:
