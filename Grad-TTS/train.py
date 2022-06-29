@@ -23,6 +23,8 @@ train_filelist_path = params.train_filelist_path
 valid_filelist_path = params.valid_filelist_path
 cmudict_path = params.cmudict_path
 add_blank = params.add_blank
+n_spks = params.n_spks
+spk_emb_dim = params.spk_emb_dim
 
 log_dir = params.log_dir
 n_epochs = params.n_epochs
@@ -105,8 +107,11 @@ if __name__ == "__main__":
                 model.zero_grad()
                 x, x_lengths = batch['x'].to(device), batch['x_lengths'].to(device)
                 y, y_lengths = batch['y'].to(device), batch['y_lengths'].to(device)
+                spk = batch['spk'].to(torch.long).to(device)
+
                 dur_loss, prior_loss, diff_loss = model.compute_loss(x, x_lengths,
                                                                      y, y_lengths,
+                                                                     spk=spk,
                                                                      out_size=out_size)
                 loss = sum([dur_loss, prior_loss, diff_loss])
                 loss.backward()
@@ -152,8 +157,10 @@ if __name__ == "__main__":
         with torch.no_grad():
             for i, item in enumerate(test_batch):
                 x = item['x'].to(torch.long).unsqueeze(0).to(device)
+                spk = item['spk'].to(torch.long).to(device)
+
                 x_lengths = torch.LongTensor([x.shape[-1]]).to(device)
-                y_enc, y_dec, attn = model(x, x_lengths, n_timesteps=50)
+                y_enc, y_dec, attn = model(x, x_lengths, spk=spk, n_timesteps=50)
                 logger.add_image(f'image_{i}/generated_enc',
                                  plot_tensor(y_enc.squeeze().cpu()),
                                  global_step=iteration, dataformats='HWC')
